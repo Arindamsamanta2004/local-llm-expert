@@ -41,7 +41,9 @@ Auto-filtered by your hardware. You only see what fits.
 | Model | VRAM | Disk | Best For |
 |-------|------|------|----------|
 | Qwen3-Coder-Next 80B (MoE) | 52 GB | 35 GB | Coding (SWE-bench #1) |
+| Qwen3-Next 80B A3B Instruct | 52 GB | 35 GB | General-purpose (80B MoE) |
 | Qwen3-Coder-Next 80B (FP8) | 92 GB | 85 GB | Coding (full quality) |
+| Qwen3.8-27B | 17 GB | 18 GB | Coding + reasoning (latest) |
 | Qwen3.6-27B | 17 GB | 18 GB | General + coding |
 | Qwen3-Coder 30B (MoE) | 19 GB | 20 GB | Coding (best under 24GB) |
 | Qwen2.5-Coder-32B | 20 GB | 21 GB | Coding (proven) |
@@ -50,6 +52,8 @@ Auto-filtered by your hardware. You only see what fits.
 | DeepSeek-R1-Distill-14B | 9 GB | 10 GB | Reasoning |
 | Qwen2.5-Coder-7B | 5 GB | 5 GB | Coding (8GB GPU / CPU) |
 | DeepSeek-R1-Distill-7B | 5 GB | 5 GB | Reasoning (8GB GPU / CPU) |
+
+CPU-only machines also get Qwen3.8-27B and Qwen3.6-27B as options (~20GB RAM needed, slower but capable).
 
 ## Commands
 

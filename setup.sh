@@ -224,9 +224,11 @@ init_models() {
     ALL_MODELS=(
         # Large GPU models (48GB+)
         "Qwen3-Coder-Next 80B (MoE, 3B active)|qwen3-coder-next:q4_K_M|Qwen/Qwen3-Coder-Next|52000|35000|#1 SWE-bench, 256K ctx, best coding model|large"
+        "Qwen3-Next 80B A3B Instruct (MoE, 3B active)|qwen3-next:80b|Qwen/Qwen3-Next-80B-A3B-Instruct|52000|35000|General-purpose 80B MoE, 256K ctx|large"
         "Qwen3-Coder-Next 80B (FP8, best quality)|qwen3-coder-next:fp8|Qwen/Qwen3-Coder-Next-FP8|92000|85000|Full quality FP8, needs 96GB+ VRAM|xlarge"
 
         # Medium GPU models (16-24GB)
+        "Qwen3.8-27B|qwen3.8:27b|Qwen/Qwen3.8-27B-Instruct|17000|18000|Latest Qwen 27B, strong coding + reasoning|medium"
         "Qwen3.6-27B|qwen3.6:27b|Qwen/Qwen3.6-27B-Instruct|17000|18000|Strong all-rounder, 256K ctx|medium"
         "Qwen3-Coder 30B (MoE, 3B active)|qwen3-coder:30b|Qwen/Qwen3-Coder-30B-A3B-Instruct|19000|20000|Best coding model under 24GB|medium"
         "Qwen2.5-Coder-32B|qwen2.5-coder:32b|Qwen/Qwen2.5-Coder-32B-Instruct|20000|21000|Proven coding model, near GPT-4o|medium"
@@ -238,7 +240,9 @@ init_models() {
         "Qwen2.5-Coder-7B|qwen2.5-coder:7b|Qwen/Qwen2.5-Coder-7B-Instruct|5000|5000|Good for 8GB GPUs, 72% HumanEval|small"
         "DeepSeek-R1-Distill-Qwen-7B|deepseek-r1:8b|deepseek-ai/DeepSeek-R1-Distill-Qwen-7B|5200|5200|Reasoning model, 128K ctx|small"
 
-        # CPU models (no GPU required)
+        # CPU models (no GPU required — need enough RAM)
+        "Qwen3.8-27B (CPU)|qwen3.8:27b|Qwen/Qwen3.8-27B-Instruct|0|18000|Latest 27B, ~20GB RAM, slow but capable|cpu"
+        "Qwen3.6-27B (CPU)|qwen3.6:27b|Qwen/Qwen3.6-27B-Instruct|0|18000|Strong 27B, ~20GB RAM, slow but capable|cpu"
         "Qwen2.5-Coder-7B (CPU)|qwen2.5-coder:7b|Qwen/Qwen2.5-Coder-7B-Instruct|0|5000|Best small coding model, ~8GB RAM|cpu"
         "DeepSeek-R1-Distill-Qwen-7B (CPU)|deepseek-r1:8b|deepseek-ai/DeepSeek-R1-Distill-Qwen-7B|0|5200|Reasoning model, ~8GB RAM|cpu"
     )
@@ -1094,7 +1098,7 @@ MODELS (auto-filtered by your hardware):
   Large  (48GB+)  Qwen3-Coder-Next 80B
   Medium (16-24GB) Qwen3.6-27B, Qwen3-Coder-30B, Qwen2.5-Coder-32B
   Small  (8-12GB)  Qwen2.5-Coder-14B/7B, DeepSeek-R1-7B/14B
-  CPU              Qwen2.5-Coder-7B, DeepSeek-R1-7B
+  CPU              Qwen3.8-27B, Qwen3.6-27B, Qwen2.5-Coder-7B, DeepSeek-R1-7B
 
 KNOWN WORKAROUNDS APPLIED:
   - Ollama ignores CUDA_VISIBLE_DEVICES without OLLAMA_LLM_LIBRARY set
