@@ -739,7 +739,7 @@ cmd_status() {
     # Config files
     echo ""
     echo -e "${BOLD}Config:${NC}"
-    for loc in "./opencode.json" "${HOME}/.config/opencode/opencode.json"; do
+    for loc in "${HOME}/.config/opencode/opencode.json" "./opencode.json"; do
         if [[ -f "$loc" ]]; then
             echo "  Found: $(realpath "$loc")"
             cat "$loc" | sed 's/^/    /'
@@ -956,20 +956,23 @@ cmd_setup() {
         info "Single GPU detected — using GPU 0"
     fi
 
-    # ── Phase 5: Project directory ────────────────────────────────────────
-    header "Project Directory"
-    echo "Where should the opencode.json config go?"
-    read -rp "$(echo -e "${BOLD}> Directory [${PWD}]: ${NC}")" PROJECT_DIR
-    PROJECT_DIR="${PROJECT_DIR:-$PWD}"
-    PROJECT_DIR=$(realpath "$PROJECT_DIR" 2>/dev/null || echo "$PROJECT_DIR")
+    # ── Phase 5: Config location ─────────────────────────────────────────
+    header "Config Location"
 
-    if [[ ! -d "$PROJECT_DIR" ]]; then
-        if prompt_yn "Directory doesn't exist. Create it?"; then
-            mkdir -p "$PROJECT_DIR"
-        else
-            die "Need a valid project directory."
-        fi
-    fi
+    local global_dir="${HOME}/.config/opencode"
+    echo -e "OpenCode looks for ${BOLD}opencode.json${NC} in two places (in order):"
+    echo -e "  1. ${BOLD}Current project directory${NC}  — per-project override"
+    echo -e "  2. ${BOLD}${global_dir}/${NC}             — global default (works everywhere)"
+    echo ""
+
+    prompt_choice "Where should the config go?" \
+        "Global (recommended) — works from any directory" \
+        "Current directory (${PWD}) — only works when you cd here"
+    case $CHOICE_RESULT in
+        0) PROJECT_DIR="$global_dir" ;;
+        1) PROJECT_DIR="$PWD" ;;
+    esac
+    mkdir -p "$PROJECT_DIR"
 
     # ── Phase 6: Check ports ──────────────────────────────────────────────
     header "Pre-flight Checks"
@@ -1051,8 +1054,12 @@ cmd_setup() {
     echo -e "  ${BOLD}Config:${NC}    ${PROJECT_DIR}/opencode.json"
     echo ""
     echo -e "${BOLD}To start:${NC}"
-    echo "  cd ${PROJECT_DIR}"
-    echo "  opencode"
+    if [[ "$PROJECT_DIR" == "${HOME}/.config/opencode" ]]; then
+        echo "  cd your-project && opencode    # works from any directory"
+    else
+        echo "  cd ${PROJECT_DIR}"
+        echo "  opencode"
+    fi
     echo ""
     [[ "$PROVIDER" == "vllm" ]] && echo -e "${YELLOW}Start vLLM first: ${SCRIPT_DIR}/start_vllm.sh${NC}"
     [[ "$PROVIDER" == "lmstudio" ]] && echo -e "${YELLOW}Keep LM Studio server running.${NC}"
