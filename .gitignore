@@ -1,0 +1,6 @@
+*.log
+secrets.txt
+start_vllm.sh
+start_ollama.sh
+ollama_serve.log
+vllm.log
