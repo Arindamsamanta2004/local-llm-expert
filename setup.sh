@@ -572,13 +572,19 @@ ollama_pull_and_warmup() {
     local model_tag="$1"
     info "Pulling ${model_tag} (this may take a while on first run)..."
 
-    # If we installed via conda, ollama won't be in PATH — run in conda environment
+    # If we installed via conda, run pull within the conda environment
     local pull_output
+    local pull_exit_code=0
     if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
-        local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama pull \"${model_tag}\" 2>&1"
-        pull_output=$(bash -c "$conda_pull_cmd")
+        # Use 'conda run' which properly activates the environment
+        pull_output=$(${PKG_MGR_CMD} run -n ollama ollama pull "$model_tag" 2>&1) || pull_exit_code=$?
+        if [[ $pull_exit_code -ne 0 && -z "$pull_output" ]]; then
+            err "Failed to run ollama pull in conda environment. Trying direct pull..."
+            # Fall back to using system ollama if conda pull fails
+            pull_output=$(ollama pull "$model_tag" 2>&1) || pull_exit_code=$?
+        fi
     else
-        pull_output=$(ollama pull "$model_tag" 2>&1)
+        pull_output=$(ollama pull "$model_tag" 2>&1) || pull_exit_code=$?
     fi
 
     # Check if Ollama version is too old
