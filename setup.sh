@@ -309,15 +309,49 @@ ollama_install() {
             local has_conda=false
             command -v conda &>/dev/null && has_conda=true
 
-            if $has_conda; then
-                # Conda is available — use it
-                header "Ollama Installation via Conda (Recommended for HPC)"
-                info "Installing Ollama from conda..."
-                if conda install -y ollama &>/dev/null; then
-                    ok "Ollama installed via conda: $(ollama --version 2>/dev/null)"
+            # Check for conda/mamba
+            local has_mamba=false
+            command -v mamba &>/dev/null && has_mamba=true
+
+            if $has_conda || $has_mamba; then
+                header "Install Ollama via Conda/Mamba"
+
+                # Offer choice between conda and mamba
+                local pkg_mgr_options=()
+                [[ "$has_conda" == "true" ]] && pkg_mgr_options+=("Conda (slower, but standard)")
+                [[ "$has_mamba" == "true" ]] && pkg_mgr_options+=("Mamba (faster alternative to conda)")
+
+                if (( ${#pkg_mgr_options[@]} > 1 )); then
+                    prompt_choice "Which package manager do you prefer?" "${pkg_mgr_options[@]}"
+                    if (( CHOICE_RESULT == 0 )); then
+                        PKG_MGR_CMD="conda"
+                    else
+                        PKG_MGR_CMD="mamba"
+                    fi
+                elif $has_mamba; then
+                    PKG_MGR_CMD="mamba"
+                else
+                    PKG_MGR_CMD="conda"
+                fi
+
+                info "Creating conda environment and installing Ollama via ${PKG_MGR_CMD}..."
+                echo ""
+                echo "Running: ${PKG_MGR_CMD} create -y -n ollama"
+                echo "Then:    ${PKG_MGR_CMD} install -y -n ollama ollama"
+                echo ""
+
+                if ${PKG_MGR_CMD} create -y -n ollama &>/dev/null && \
+                   ${PKG_MGR_CMD} install -y -n ollama ollama &>/dev/null; then
+                    ok "Ollama installed in 'ollama' environment"
+                    echo ""
+                    echo -e "${BOLD}To use Ollama:${NC}"
+                    echo "  conda activate ollama  (or: mamba activate ollama)"
+                    echo "  ollama serve"
+                    echo ""
+                    echo -e "${YELLOW}Note: You must activate the environment each time you want to use Ollama${NC}"
                     return 0
                 else
-                    warn "Conda installation failed. Falling back to other options..."
+                    warn "Installation failed. Falling back to binary download..."
                 fi
             fi
 
