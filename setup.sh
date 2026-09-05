@@ -589,58 +589,43 @@ ollama_pull_and_warmup() {
 
     # Check if Ollama version is too old
     if echo "$pull_output" | grep -q "requires a newer version of Ollama"; then
-        warn "Ollama version is outdated. Upgrading to latest version..."
-
-        # Kill old Ollama processes
-        pkill -f "ollama serve" 2>/dev/null || true
-        sleep 2
-
-        # Download and install latest Ollama binary
-        info "Downloading latest Ollama..."
-        mkdir -p ~/.local/bin
-        local tarball="${SCRIPT_DIR}/ollama-linux-x86_64-latest.tar.gz"
-        local url="https://ollama.com/download/ollama-linux-x86_64.tar.gz"
-
-        if curl -sL --max-time 60 -o "$tarball" "$url" && tar -tzf "$tarball" &>/dev/null; then
-            if tar -xz -C ~/.local/bin -f "$tarball"; then
-                rm -f "$tarball"
-                ok "Ollama upgraded to latest version"
-
-                # Restart Ollama
-                info "Restarting Ollama with new version..."
-                if $USED_CONDA_INSTALL; then
-                    local conda_start_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ~/.local/bin/ollama serve"
-                    nohup bash -c "$conda_start_cmd" > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
-                else
-                    nohup ~/.local/bin/ollama serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
-                fi
-                sleep 3
-
-                # Retry pull with new version
-                info "Retrying model pull with updated Ollama..."
-                if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
-                    local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ~/.local/bin/ollama pull \"${model_tag}\""
-                    bash -c "$conda_pull_cmd"
-                else
-                    ~/.local/bin/ollama pull "$model_tag"
-                fi
-            else
-                die "Failed to extract updated Ollama"
-            fi
-        else
-            die "Failed to download latest Ollama from $url"
-        fi
+        warn "Ollama version is outdated. Model requires a newer version."
+        warn "Try upgrading Ollama manually or use a pre-built binary version."
+        echo ""
+        echo "To upgrade Ollama:"
+        echo "  1. Download from: https://github.com/ollama/ollama/releases"
+        echo "  2. Or use your package manager:"
+        echo "     - Ubuntu/Debian: apt-get install ollama"
+        echo "     - RHEL/CentOS: dnf install ollama"
+        echo "     - macOS: brew install ollama"
+        echo ""
+        echo "After upgrading, run: ./setup.sh again"
+        die "Please upgrade Ollama to support this model"
     else
         # Print pull output (normally empty on success)
         [[ -n "$pull_output" ]] && echo "$pull_output"
     fi
 
     # Verify model was actually pulled
-    if ! ollama list | grep -q "^${model_tag%:*}"; then
-        err "Model pull failed. Error output:"
-        echo "$pull_output"
-        die "Unable to pull ${model_tag}"
-    fi
+    # Try multiple times since Ollama may be starting up
+    local max_retries=3
+    local retry=0
+    while (( retry < max_retries )); do
+        if ollama list 2>/dev/null | grep -q "^${model_tag%:*}"; then
+            ok "Model pulled: ${model_tag}"
+            return 0
+        fi
+        retry=$((retry + 1))
+        if (( retry < max_retries )); then
+            warn "Model not found yet (attempt $retry/$max_retries). Waiting..."
+            sleep 5
+        fi
+    done
+
+    # If we still don't have it, show error
+    err "Model pull failed. Error output:"
+    echo "$pull_output"
+    die "Unable to pull ${model_tag}"
     ok "Model pulled: ${model_tag}"
 
     info "Warming up model (first load is slow)..."
