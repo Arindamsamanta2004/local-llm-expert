@@ -136,10 +136,36 @@ detect_system() {
         if [[ -n "$gpu_csv" ]]; then
             HAS_NVIDIA=true; HAS_GPU=true
             while IFS=',' read -r idx name vram uuid used; do
-                GPU_NAMES+=("$(echo "$name" | xargs)")
-                GPU_VRAM_MB+=("$(echo "$vram" | xargs)")
-                GPU_UUIDS+=("$(echo "$uuid" | xargs)")
-                GPU_MEM_USED_MB+=("$(echo "$used" | xargs)")
+                idx=$(echo "$idx" | xargs)
+                name=$(echo "$name" | xargs)
+                vram=$(echo "$vram" | xargs)
+                uuid=$(echo "$uuid" | xargs)
+                used=$(echo "$used" | xargs)
+
+                # Handle MIG (Multi-Instance GPU) restrictions: [Insufficient Permissions]
+                # In MIG mode, we can't query memory.total but we can parse MIG device info
+                if [[ "$vram" == "[Insufficient Permissions]" ]]; then
+                    # Try to get MIG device memory from nvidia-smi -L output
+                    local mig_mem
+                    mig_mem=$(nvidia-smi -L 2>/dev/null | grep -oP "MIG.*?\K[0-9]+(?=gb)" | head -1 || echo "")
+                    if [[ -n "$mig_mem" ]]; then
+                        vram=$((mig_mem * 1024))  # Convert GB to MB
+                        warn "Running in MIG mode — detected $mig_mem GB allocated"
+                    else
+                        warn "Running in restricted GPU mode (MIG?) — cannot detect memory. Defaulting to 71GB"
+                        vram=$((71 * 1024))  # Reasonable default for H200 MIG partition
+                    fi
+                fi
+
+                # Handle [Insufficient Permissions] in memory.used field
+                if [[ "$used" == "[Insufficient Permissions]" ]] || [[ ! "$used" =~ ^[0-9]+$ ]]; then
+                    used=0
+                fi
+
+                GPU_NAMES+=("$name")
+                GPU_VRAM_MB+=("$vram")
+                GPU_UUIDS+=("$uuid")
+                GPU_MEM_USED_MB+=("$used")
                 GPU_COUNT=$((GPU_COUNT + 1))
             done <<< "$gpu_csv"
 
