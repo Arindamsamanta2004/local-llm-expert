@@ -15,6 +15,7 @@ set -euo pipefail
 VERSION="1.0.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
+USED_CONDA_INSTALL=false
 
 # ── Colors (disabled if not a terminal) ──────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -343,13 +344,21 @@ ollama_install() {
                 if ${PKG_MGR_CMD} create -y -n ollama &>/dev/null && \
                    ${PKG_MGR_CMD} install -y -n ollama ollama &>/dev/null; then
                     ok "Ollama installed in 'ollama' environment"
-                    echo ""
-                    echo -e "${BOLD}To use Ollama:${NC}"
-                    echo "  conda activate ollama  (or: mamba activate ollama)"
-                    echo "  ollama serve"
-                    echo ""
-                    echo -e "${YELLOW}Note: You must activate the environment each time you want to use Ollama${NC}"
-                    return 0
+                    USED_CONDA_INSTALL=true
+
+                    # Start Ollama within the conda environment
+                    info "Starting Ollama from conda environment..."
+                    local conda_activation_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama serve"
+                    nohup bash -c "$conda_activation_cmd" > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+                    OLLAMA_PID=$!
+                    sleep 3
+                    if curl -s --max-time 3 http://localhost:11434/api/tags &>/dev/null; then
+                        ok "Ollama started from conda environment (PID: ${OLLAMA_PID})"
+                        return 0
+                    else
+                        ok "Ollama started (PID: ${OLLAMA_PID}) — still loading, check log: ${SCRIPT_DIR}/ollama_serve.log"
+                        return 0
+                    fi
                 else
                     warn "Installation failed. Falling back to binary download..."
                 fi
@@ -1220,6 +1229,13 @@ cmd_setup() {
     else
         echo "  cd ${PROJECT_DIR}"
         echo "  opencode"
+    fi
+
+    if [[ "$PROVIDER" == "ollama" && "$USED_CONDA_INSTALL" == "true" ]]; then
+        echo ""
+        echo -e "${BOLD}To restart Ollama next time:${NC}"
+        echo "  conda activate ollama  (or: mamba activate ollama)"
+        echo "  ollama serve"
     fi
     echo ""
     [[ "$PROVIDER" == "vllm" ]] && echo -e "${YELLOW}Start vLLM first: ${SCRIPT_DIR}/start_vllm.sh${NC}"
