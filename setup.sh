@@ -617,27 +617,60 @@ ollama_pull_and_warmup() {
 
         info "Latest Ollama version: $latest_tag"
 
-        # Try multiple mirror URLs for the latest release
-        local download_urls=(
+        # Fetch the actual asset URLs from GitHub API (format changed in newer versions)
+        local asset_url
+        asset_url=$(curl -s "https://api.github.com/repos/ollama/ollama/releases/latest" 2>/dev/null \
+            | grep "browser_download_url" \
+            | grep "linux-amd64\.tar" \
+            | grep -v "rocm\|mlx" \
+            | grep -o '"https://[^"]*"' | tr -d '"' | head -1)
+
+        # Build download URL list — prefer API-fetched URL, fallback to known patterns
+        local download_urls=()
+        [[ -n "$asset_url" ]] && download_urls+=("$asset_url")
+        download_urls+=(
+            "https://github.com/ollama/ollama/releases/download/${latest_tag}/ollama-linux-amd64.tar.zst"
             "https://github.com/ollama/ollama/releases/download/${latest_tag}/ollama-linux-x86_64.tar.gz"
             "https://ollama.com/download/ollama-linux-x86_64.tar.gz"
         )
 
         local downloaded=false
+        local tarball_ext=""
         for url in "${download_urls[@]}"; do
             info "Trying: $url"
-            if curl -sL --max-time 60 -o "$tarball" "$url" 2>/dev/null; then
-                # Verify it's a valid tar file
-                if tar -tzf "$tarball" &>/dev/null; then
-                    downloaded=true
-                    break
+            # Determine extension from URL
+            if [[ "$url" == *.tar.zst ]]; then
+                tarball="/tmp/ollama-latest.tar.zst"
+                tarball_ext="zst"
+            else
+                tarball="/tmp/ollama-latest.tar.gz"
+                tarball_ext="gz"
+            fi
+            if curl -sL --max-time 120 -o "$tarball" "$url" 2>/dev/null; then
+                # Verify it's a valid archive
+                if [[ "$tarball_ext" == "zst" ]]; then
+                    command -v zstd &>/dev/null && zstd -t "$tarball" &>/dev/null && downloaded=true && break
+                else
+                    tar -tzf "$tarball" &>/dev/null && downloaded=true && break
                 fi
             fi
         done
 
         if [[ "$downloaded" == "true" ]]; then
-            if tar -xz -C ~/.local/bin -f "$tarball" 2>/dev/null; then
-                rm -f "$tarball"
+            mkdir -p /tmp/ollama-extract
+            if [[ "$tarball_ext" == "zst" ]]; then
+                zstd -d "$tarball" -o /tmp/ollama-extract/ollama.tar 2>/dev/null \
+                    && tar -xf /tmp/ollama-extract/ollama.tar -C ~/.local/bin 2>/dev/null
+            else
+                tar -xz -C ~/.local/bin -f "$tarball" 2>/dev/null
+            fi
+            # Find and fix the ollama binary location
+            local extracted_ollama
+            extracted_ollama=$(find ~/.local/bin -name "ollama" -type f 2>/dev/null | head -1)
+            [[ -n "$extracted_ollama" ]] && chmod +x "$extracted_ollama"
+            rm -f "$tarball" /tmp/ollama-extract/ollama.tar 2>/dev/null
+            rmdir /tmp/ollama-extract 2>/dev/null || true
+            if [[ -x "$ollama_bin" ]]; then
                 # Ensure ~/.local/bin is in PATH
                 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
                     export PATH="${HOME}/.local/bin:$PATH"
