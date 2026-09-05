@@ -1331,7 +1331,7 @@ cmd_setup() {
 
             API_BASE="http://localhost:11434/v1"
             PROVIDER_KEY="ollama"
-            MODEL_STRING="ollama:${MODEL_OLLAMA}"
+            MODEL_STRING="ollama/${MODEL_OLLAMA}"
             ;;
 
         vllm)
@@ -1341,7 +1341,7 @@ cmd_setup() {
 
             API_BASE="http://localhost:8000/v1"
             PROVIDER_KEY="vllm"
-            MODEL_STRING="vllm:${MODEL_OLLAMA%%:*}"
+            MODEL_STRING="vllm/${MODEL_OLLAMA%%:*}"
             ;;
 
         lmstudio)
@@ -1354,7 +1354,7 @@ cmd_setup() {
 
             API_BASE="http://localhost:1234/v1"
             PROVIDER_KEY="lmstudio"
-            MODEL_STRING="lmstudio:${MODEL_OLLAMA%%:*}"
+            MODEL_STRING="lmstudio/${MODEL_OLLAMA%%:*}"
             ;;
     esac
 

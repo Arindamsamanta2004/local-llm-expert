@@ -4,11 +4,11 @@
 #
 # Removes all user-namespace installations from a previous setup.sh run:
 # - Conda ollama environment
-# - ~/.local/bin/ollama binary
+# - ~/.local/bin/ollama binary (downloaded latest)
 # - ~/.cache/local-llm-expert/ cache
-# - OpenCode config
-# - Generated launcher scripts
-# - Old processes
+# - OpenCode config + auth
+# - Setup logs and temp files
+# - Old processes (ollama serve, vllm)
 #
 # Usage:
 #   ./cleanup.sh              Interactive cleanup
@@ -126,18 +126,25 @@ main() {
         rm -rf "$HOME/.cache/local-llm-expert" && ok "Cache removed" || warn "Failed to remove cache"
     fi
 
-    # 4. Remove OpenCode config
+    # 4. Remove OpenCode config and auth
     if [[ -d "$HOME/.config/opencode" ]]; then
         info "Removing ~/.config/opencode/..."
         rm -rf "$HOME/.config/opencode" && ok "OpenCode config removed" || warn "Failed to remove config"
     fi
+    if [[ -f "$HOME/.local/share/opencode/auth.json" ]]; then
+        info "Removing OpenCode auth..."
+        rm -f "$HOME/.local/share/opencode/auth.json" && ok "Auth removed" || warn "Failed to remove auth"
+    fi
 
-    # 5. Remove logs
-    info "Removing setup logs..."
+    # 5. Remove logs and temp files
+    info "Removing setup logs and temp files..."
     rm -f "$SCRIPT_DIR"/setup_*.log
     rm -f "$SCRIPT_DIR"/ollama_serve.log
     rm -f "$SCRIPT_DIR"/vllm.log
-    ok "Logs removed"
+    rm -f "$SCRIPT_DIR"/start_ollama.sh
+    rm -f /tmp/ollama-latest.tar.zst /tmp/ollama-latest.tar.gz 2>/dev/null || true
+    rm -rf /tmp/ollama-extract 2>/dev/null || true
+    ok "Logs and temp files removed"
 
     # 7. Remove models (if --all)
     if [[ "$remove_all" == "true" ]]; then
