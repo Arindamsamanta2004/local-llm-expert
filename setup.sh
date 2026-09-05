@@ -1375,6 +1375,8 @@ cmd_setup() {
 
     # ── Done ──────────────────────────────────────────────────────────────
     header "Setup Complete!"
+    ok "Everything is ready!"
+    echo ""
     echo -e "  ${BOLD}Provider:${NC}  ${PROVIDER}"
     echo -e "  ${BOLD}Model:${NC}     ${MODEL_NAME}"
     if [[ -n "$SELECTED_GPU_IDX" ]]; then
@@ -1383,25 +1385,41 @@ cmd_setup() {
     echo -e "  ${BOLD}API:${NC}       ${API_BASE}"
     echo -e "  ${BOLD}Config:${NC}    ${PROJECT_DIR}/opencode.json"
     echo ""
-    echo -e "${BOLD}To start:${NC}"
-    if [[ "$PROJECT_DIR" == "${HOME}/.config/opencode" ]]; then
-        echo "  cd your-project && opencode    # works from any directory"
-    else
-        echo "  cd ${PROJECT_DIR}"
-        echo "  opencode"
-    fi
 
     if [[ "$PROVIDER" == "ollama" && "$USED_CONDA_INSTALL" == "true" ]]; then
-        echo ""
-        echo -e "${BOLD}To restart Ollama next time:${NC}"
-        echo "  conda activate ollama  (or: mamba activate ollama)"
+        echo -e "${BOLD}Next time you want to use Ollama:${NC}"
+        echo "  conda activate ollama"
         echo "  ollama serve"
+        echo ""
     fi
-    echo ""
-    [[ "$PROVIDER" == "vllm" ]] && echo -e "${YELLOW}Start vLLM first: ${SCRIPT_DIR}/start_vllm.sh${NC}"
-    [[ "$PROVIDER" == "lmstudio" ]] && echo -e "${YELLOW}Keep LM Studio server running.${NC}"
-    echo ""
+
+    [[ "$PROVIDER" == "vllm" ]] && echo -e "${YELLOW}Remember to start vLLM first: ${SCRIPT_DIR}/start_vllm.sh${NC}\n"
+    [[ "$PROVIDER" == "lmstudio" ]] && echo -e "${YELLOW}Keep LM Studio server running.${NC}\n"
+
     echo "Log: ${LOG_FILE}"
+    echo ""
+
+    # Find opencode binary
+    local opencode_bin
+    for candidate in \
+        "${HOME}/.opencode/bin/opencode" \
+        "${HOME}/.local/bin/opencode" \
+        "$(command -v opencode 2>/dev/null || true)"; do
+        if [[ -n "$candidate" && -x "$candidate" ]]; then
+            opencode_bin="$candidate"
+            break
+        fi
+    done
+
+    if [[ -n "$opencode_bin" ]]; then
+        echo -e "${GREEN}Launching OpenCode now...${NC}"
+        echo -e "${YELLOW}(Press Ctrl+C to exit OpenCode)${NC}"
+        echo ""
+        exec "$opencode_bin"
+    else
+        echo -e "${BOLD}To start OpenCode:${NC}"
+        echo "  ~/.opencode/bin/opencode"
+    fi
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
