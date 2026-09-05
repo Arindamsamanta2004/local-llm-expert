@@ -659,17 +659,19 @@ ollama_pull_and_warmup() {
         if [[ "$downloaded" == "true" ]]; then
             mkdir -p /tmp/ollama-extract
             if [[ "$tarball_ext" == "zst" ]]; then
-                zstd -d "$tarball" -o /tmp/ollama-extract/ollama.tar 2>/dev/null \
-                    && tar -xf /tmp/ollama-extract/ollama.tar -C ~/.local/bin 2>/dev/null
+                zstd -d -c "$tarball" 2>/dev/null | tar -x -C /tmp/ollama-extract 2>/dev/null
             else
-                tar -xz -C ~/.local/bin -f "$tarball" 2>/dev/null
+                tar -xz -C /tmp/ollama-extract -f "$tarball" 2>/dev/null
             fi
-            # Find and fix the ollama binary location
+            # Find the ollama binary and install to ~/.local/bin
             local extracted_ollama
-            extracted_ollama=$(find ~/.local/bin -name "ollama" -type f 2>/dev/null | head -1)
-            [[ -n "$extracted_ollama" ]] && chmod +x "$extracted_ollama"
-            rm -f "$tarball" /tmp/ollama-extract/ollama.tar 2>/dev/null
-            rmdir /tmp/ollama-extract 2>/dev/null || true
+            extracted_ollama=$(find /tmp/ollama-extract -name "ollama" -type f 2>/dev/null | head -1)
+            if [[ -n "$extracted_ollama" ]]; then
+                cp "$extracted_ollama" "$ollama_bin"
+                chmod +x "$ollama_bin"
+            fi
+            rm -f "$tarball"
+            rm -rf /tmp/ollama-extract
             if [[ -x "$ollama_bin" ]]; then
                 # Ensure ~/.local/bin is in PATH
                 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
