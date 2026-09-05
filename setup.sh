@@ -573,11 +573,60 @@ ollama_pull_and_warmup() {
     info "Pulling ${model_tag} (this may take a while on first run)..."
 
     # If we installed via conda, ollama won't be in PATH — run in conda environment
+    local pull_output
     if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
-        local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama pull \"${model_tag}\""
-        bash -c "$conda_pull_cmd"
+        local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama pull \"${model_tag}\" 2>&1"
+        pull_output=$(bash -c "$conda_pull_cmd")
     else
-        ollama pull "$model_tag"
+        pull_output=$(ollama pull "$model_tag" 2>&1)
+    fi
+
+    # Check if Ollama version is too old
+    if echo "$pull_output" | grep -q "requires a newer version of Ollama"; then
+        warn "Ollama version is outdated. Upgrading to latest version..."
+
+        # Kill old Ollama processes
+        pkill -f "ollama serve" 2>/dev/null || true
+        sleep 2
+
+        # Download and install latest Ollama binary
+        info "Downloading latest Ollama..."
+        mkdir -p ~/.local/bin
+        local tarball="${SCRIPT_DIR}/ollama-linux-x86_64-latest.tar.gz"
+        local url="https://ollama.com/download/ollama-linux-x86_64.tar.gz"
+
+        if curl -sL --max-time 60 -o "$tarball" "$url" && tar -tzf "$tarball" &>/dev/null; then
+            if tar -xz -C ~/.local/bin -f "$tarball"; then
+                rm -f "$tarball"
+                ok "Ollama upgraded to latest version"
+
+                # Restart Ollama
+                info "Restarting Ollama with new version..."
+                if $USED_CONDA_INSTALL; then
+                    local conda_start_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ~/.local/bin/ollama serve"
+                    nohup bash -c "$conda_start_cmd" > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+                else
+                    nohup ~/.local/bin/ollama serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+                fi
+                sleep 3
+
+                # Retry pull with new version
+                info "Retrying model pull with updated Ollama..."
+                if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
+                    local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ~/.local/bin/ollama pull \"${model_tag}\""
+                    bash -c "$conda_pull_cmd"
+                else
+                    ~/.local/bin/ollama pull "$model_tag"
+                fi
+            else
+                die "Failed to extract updated Ollama"
+            fi
+        else
+            die "Failed to download latest Ollama from $url"
+        fi
+    else
+        # Print pull output (normally empty on success)
+        [[ -n "$pull_output" ]] && echo "$pull_output"
     fi
     ok "Model pulled: ${model_tag}"
 
