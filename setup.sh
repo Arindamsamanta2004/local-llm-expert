@@ -291,15 +291,65 @@ ollama_install() {
     fi
 
     info "Installing Ollama..."
+
+    # Check if sudo is available
+    local has_sudo=false
+    sudo -n true 2>/dev/null && has_sudo=true
+
     if [[ "$OS" == "macos" ]] && [[ "$PKG_MGR" == "brew" ]]; then
         brew install ollama
+        ok "Ollama installed: $(ollama --version 2>/dev/null)"
     elif [[ "$OS" == "linux" ]]; then
-        curl -fsSL https://ollama.com/install.sh | sh
+        if $has_sudo; then
+            # System-wide installation
+            curl -fsSL https://ollama.com/install.sh | sh
+            ok "Ollama installed system-wide: $(ollama --version 2>/dev/null)"
+        else
+            # No sudo — offer choices
+            header "Ollama Installation Options (No sudo)"
+            echo "This appears to be an HPC/SLURM environment without sudo access."
+            echo ""
+
+            prompt_choice "How would you like to install Ollama?" \
+                "Install locally to ~/.local/bin (no admin needed)" \
+                "Ask your admin to install system-wide (recommended)"
+
+            case $CHOICE_RESULT in
+                0)
+                    # Local installation
+                    info "Installing Ollama to ~/.local/bin..."
+                    mkdir -p ~/.local/bin
+                    local tarball="${SCRIPT_DIR}/ollama-linux-x86_64.tar.gz"
+                    if curl -fsSL -o "$tarball" https://ollama.com/download/ollama-linux-x86_64.tar.gz; then
+                        if tar -xz -C ~/.local/bin -f "$tarball"; then
+                            rm -f "$tarball"
+                            ok "Ollama installed to ~/.local/bin: $(~/.local/bin/ollama --version 2>/dev/null)"
+                            if command -v ollama &>/dev/null; then
+                                ok "Ollama is in PATH"
+                            else
+                                warn "Add to ~/.bashrc or ~/.zshrc: export PATH=\"\$HOME/.local/bin:\$PATH\""
+                            fi
+                        else
+                            die "Failed to extract Ollama"
+                        fi
+                    else
+                        die "Failed to download Ollama"
+                    fi
+                    ;;
+                1)
+                    # Admin install
+                    warn "System-wide installation requires sudo."
+                    echo ""
+                    echo "Ask your administrator to run:"
+                    echo "  curl -fsSL https://ollama.com/install.sh | sudo sh"
+                    echo ""
+                    die "Cannot proceed without Ollama. Please contact your admin."
+                    ;;
+            esac
+        fi
     else
         die "Cannot auto-install Ollama on ${OS}. Install manually from https://ollama.com/download"
     fi
-
-    ok "Ollama installed: $(ollama --version 2>/dev/null)"
 }
 
 ollama_ensure_running() {
