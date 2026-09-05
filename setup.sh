@@ -571,7 +571,14 @@ ollama_pin_gpu() {
 ollama_pull_and_warmup() {
     local model_tag="$1"
     info "Pulling ${model_tag} (this may take a while on first run)..."
-    ollama pull "$model_tag"
+
+    # If we installed via conda, ollama won't be in PATH — run in conda environment
+    if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
+        local conda_pull_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama pull \"${model_tag}\""
+        bash -c "$conda_pull_cmd"
+    else
+        ollama pull "$model_tag"
+    fi
     ok "Model pulled: ${model_tag}"
 
     info "Warming up model (first load is slow)..."
