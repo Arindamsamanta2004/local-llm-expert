@@ -600,9 +600,26 @@ ollama_pull_and_warmup() {
         local tarball="/tmp/ollama-latest.tar.gz"
         local ollama_bin="${HOME}/.local/bin/ollama"
 
+        # Fetch latest release tag from GitHub API
+        info "Checking latest Ollama release..."
+        local latest_tag
+        latest_tag=$(curl -s "https://api.github.com/repos/ollama/ollama/releases/latest" 2>/dev/null | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4 | head -1)
+
+        if [[ -z "$latest_tag" ]]; then
+            # Fallback: try to get from release page
+            warn "Could not fetch latest tag from API. Using fallback method..."
+            latest_tag=$(curl -s "https://github.com/ollama/ollama/releases/latest" 2>/dev/null | grep -oP 'releases/tag/\K[^"]+' | head -1)
+        fi
+
+        if [[ -z "$latest_tag" ]]; then
+            die "Could not determine latest Ollama version"
+        fi
+
+        info "Latest Ollama version: $latest_tag"
+
         # Try multiple mirror URLs for the latest release
         local download_urls=(
-            "https://github.com/ollama/ollama/releases/download/v0.5.15/ollama-linux-x86_64.tar.gz"
+            "https://github.com/ollama/ollama/releases/download/${latest_tag}/ollama-linux-x86_64.tar.gz"
             "https://ollama.com/download/ollama-linux-x86_64.tar.gz"
         )
 
