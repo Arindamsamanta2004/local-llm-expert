@@ -305,13 +305,29 @@ ollama_install() {
             curl -fsSL https://ollama.com/install.sh | sh
             ok "Ollama installed system-wide: $(ollama --version 2>/dev/null)"
         else
-            # No sudo — offer choices
+            # No sudo — check for conda first
+            local has_conda=false
+            command -v conda &>/dev/null && has_conda=true
+
+            if $has_conda; then
+                # Conda is available — use it
+                header "Ollama Installation via Conda (Recommended for HPC)"
+                info "Installing Ollama from conda..."
+                if conda install -y ollama &>/dev/null; then
+                    ok "Ollama installed via conda: $(ollama --version 2>/dev/null)"
+                    return 0
+                else
+                    warn "Conda installation failed. Falling back to other options..."
+                fi
+            fi
+
+            # No conda or conda install failed — offer choices
             header "Ollama Installation Options (No sudo)"
             echo "This appears to be an HPC/SLURM environment without sudo access."
             echo ""
 
             prompt_choice "How would you like to install Ollama?" \
-                "Install locally to ~/.local/bin (no admin needed)" \
+                "Install locally to ~/.local/bin (requires network)" \
                 "Ask your admin to install system-wide (recommended)"
 
             case $CHOICE_RESULT in
@@ -320,7 +336,26 @@ ollama_install() {
                     info "Installing Ollama to ~/.local/bin..."
                     mkdir -p ~/.local/bin
                     local tarball="${SCRIPT_DIR}/ollama-linux-x86_64.tar.gz"
-                    if curl -fsSL -o "$tarball" https://ollama.com/download/ollama-linux-x86_64.tar.gz; then
+
+                    # Try downloading with multiple fallbacks
+                    local download_urls=(
+                        "https://ollama.com/download/ollama-linux-x86_64.tar.gz"
+                        "https://github.com/ollama/ollama/releases/download/v0.33.3/ollama-linux-x86_64.tar.gz"
+                    )
+
+                    local downloaded=false
+                    for url in "${download_urls[@]}"; do
+                        info "Attempting download from: $url"
+                        if curl -sL --max-time 30 -o "$tarball" "$url" 2>/dev/null; then
+                            # Verify it's actually a tar file
+                            if tar -tzf "$tarball" &>/dev/null; then
+                                downloaded=true
+                                break
+                            fi
+                        fi
+                    done
+
+                    if $downloaded; then
                         if tar -xz -C ~/.local/bin -f "$tarball"; then
                             rm -f "$tarball"
                             ok "Ollama installed to ~/.local/bin: $(~/.local/bin/ollama --version 2>/dev/null)"
@@ -333,7 +368,19 @@ ollama_install() {
                             die "Failed to extract Ollama"
                         fi
                     else
-                        die "Failed to download Ollama"
+                        err "Failed to download Ollama from any source."
+                        err "This may be a network/proxy issue on your HPC environment."
+                        echo ""
+                        echo "Alternative options:"
+                        echo "  1. Check if Ollama is already installed system-wide:"
+                        echo "     ollama --version"
+                        echo ""
+                        echo "  2. Ask your admin to install it:"
+                        echo "     curl -fsSL https://ollama.com/install.sh | sudo sh"
+                        echo ""
+                        echo "  3. Try installing from conda (if available):"
+                        echo "     conda install -c conda-forge ollama"
+                        die "Cannot proceed without Ollama"
                     fi
                     ;;
                 1)
