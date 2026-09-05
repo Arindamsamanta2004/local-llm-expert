@@ -589,18 +589,72 @@ ollama_pull_and_warmup() {
 
     # Check if Ollama version is too old
     if echo "$pull_output" | grep -q "requires a newer version of Ollama"; then
-        warn "Ollama version is outdated. Model requires a newer version."
-        warn "Try upgrading Ollama manually or use a pre-built binary version."
-        echo ""
-        echo "To upgrade Ollama:"
-        echo "  1. Download from: https://github.com/ollama/ollama/releases"
-        echo "  2. Or use your package manager:"
-        echo "     - Ubuntu/Debian: apt-get install ollama"
-        echo "     - RHEL/CentOS: dnf install ollama"
-        echo "     - macOS: brew install ollama"
-        echo ""
-        echo "After upgrading, run: ./setup.sh again"
-        die "Please upgrade Ollama to support this model"
+        warn "Ollama version is outdated. Downloading latest version to ~/.local/bin..."
+
+        # Kill old Ollama processes
+        pkill -f "ollama serve" 2>/dev/null || true
+        sleep 2
+
+        # Download latest Ollama binary
+        mkdir -p ~/.local/bin
+        local tarball="/tmp/ollama-latest.tar.gz"
+        local ollama_bin="${HOME}/.local/bin/ollama"
+
+        # Try multiple mirror URLs for the latest release
+        local download_urls=(
+            "https://github.com/ollama/ollama/releases/download/v0.5.15/ollama-linux-x86_64.tar.gz"
+            "https://ollama.com/download/ollama-linux-x86_64.tar.gz"
+        )
+
+        local downloaded=false
+        for url in "${download_urls[@]}"; do
+            info "Trying: $url"
+            if curl -sL --max-time 60 -o "$tarball" "$url" 2>/dev/null; then
+                # Verify it's a valid tar file
+                if tar -tzf "$tarball" &>/dev/null; then
+                    downloaded=true
+                    break
+                fi
+            fi
+        done
+
+        if [[ "$downloaded" == "true" ]]; then
+            if tar -xz -C ~/.local/bin -f "$tarball" 2>/dev/null; then
+                rm -f "$tarball"
+                # Ensure ~/.local/bin is in PATH
+                if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+                    export PATH="${HOME}/.local/bin:$PATH"
+                fi
+                ok "Ollama upgraded to latest: $($ollama_bin --version 2>/dev/null)"
+
+                # Restart Ollama with new binary
+                info "Restarting Ollama with new version..."
+                nohup $ollama_bin serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+                sleep 3
+
+                # Retry pull with new version
+                info "Retrying model pull with updated Ollama..."
+                pull_output=$($ollama_bin pull "$model_tag" 2>&1) || true
+
+                if echo "$pull_output" | grep -q "requires a newer version"; then
+                    die "Model still requires a newer Ollama version. Please check GitHub releases."
+                fi
+            else
+                die "Failed to extract Ollama binary"
+            fi
+        else
+            warn "Could not download Ollama from available mirrors."
+            echo ""
+            echo "Manual upgrade options:"
+            echo "  1. Download from: https://github.com/ollama/ollama/releases"
+            echo "     Then extract to: ~/.local/bin/ollama"
+            echo ""
+            echo "  2. Or use your package manager (requires admin):"
+            echo "     - Ubuntu/Debian: sudo apt-get install ollama"
+            echo "     - RHEL/CentOS: sudo dnf install ollama"
+            echo ""
+            die "Unable to proceed without updated Ollama"
+        fi
     else
         # Print pull output (normally empty on success)
         [[ -n "$pull_output" ]] && echo "$pull_output"
