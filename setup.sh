@@ -628,6 +628,13 @@ ollama_pull_and_warmup() {
         # Print pull output (normally empty on success)
         [[ -n "$pull_output" ]] && echo "$pull_output"
     fi
+
+    # Verify model was actually pulled
+    if ! ollama list | grep -q "^${model_tag%:*}"; then
+        err "Model pull failed. Error output:"
+        echo "$pull_output"
+        die "Unable to pull ${model_tag}"
+    fi
     ok "Model pulled: ${model_tag}"
 
     info "Warming up model (first load is slow)..."
