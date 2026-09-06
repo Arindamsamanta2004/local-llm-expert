@@ -718,8 +718,8 @@ ollama_pull_and_warmup() {
     fi
 
     # Verify model was actually pulled
-    # Try multiple times since Ollama may be starting up
-    local max_retries=3
+    # Try multiple times with longer delays since Ollama indexes models slowly
+    local max_retries=10
     local retry=0
     while (( retry < max_retries )); do
         if ollama list 2>/dev/null | grep -q "^${model_tag%:*}"; then
@@ -728,8 +728,8 @@ ollama_pull_and_warmup() {
         fi
         retry=$((retry + 1))
         if (( retry < max_retries )); then
-            warn "Model not found yet (attempt $retry/$max_retries). Waiting..."
-            sleep 5
+            warn "Model not found yet (attempt $retry/$max_retries). Waiting 10s for indexing..."
+            sleep 10
         fi
     done
 
@@ -737,7 +737,6 @@ ollama_pull_and_warmup() {
     err "Model pull failed. Error output:"
     echo "$pull_output"
     die "Unable to pull ${model_tag}"
-    ok "Model pulled: ${model_tag}"
 
     info "Warming up model (first load is slow)..."
     local resp
