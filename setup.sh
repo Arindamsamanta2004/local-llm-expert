@@ -719,10 +719,16 @@ ollama_pull_and_warmup() {
 
     # Verify model was actually pulled
     # Try multiple times with longer delays since Ollama indexes models slowly
+    # If using conda, run ollama list within the conda environment
+    local list_cmd="ollama list"
+    if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
+        list_cmd="${PKG_MGR_CMD} run -n ollama ollama list"
+    fi
+
     local max_retries=10
     local retry=0
     while (( retry < max_retries )); do
-        if ollama list 2>/dev/null | grep -q "^${model_tag%:*}"; then
+        if eval "$list_cmd" 2>/dev/null | grep -q "^${model_tag%:*}"; then
             ok "Model pulled: ${model_tag}"
             return 0
         fi
