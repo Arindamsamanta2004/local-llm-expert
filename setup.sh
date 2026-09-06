@@ -955,7 +955,7 @@ opencode_configure() {
       }
     }
   },
-  "model": "${model_string}"
+  "model": "ollama:${MODEL_OLLAMA}"
 }
 CFGEOF
     ok "Config written: ${config_file}"
