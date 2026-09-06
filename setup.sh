@@ -1301,20 +1301,15 @@ cmd_setup() {
     # ── Phase 5: Config location ─────────────────────────────────────────
     header "Config Location"
 
-    local global_dir="${HOME}/.config/opencode"
-    echo -e "OpenCode looks for ${BOLD}opencode.json${NC} in two places (in order):"
-    echo -e "  1. ${BOLD}Current project directory${NC}  — per-project override"
-    echo -e "  2. ${BOLD}${global_dir}/${NC}             — global default (works everywhere)"
-    echo ""
+    # Always use /mnt/podman_storage (home partition has no space)
+    local global_dir="${SCRIPT_DIR%/*}/.config/opencode"
 
-    prompt_choice "Where should the config go?" \
-        "Global (recommended) — works from any directory" \
-        "Current directory (${PWD}) — only works when you cd here"
-    case $CHOICE_RESULT in
-        0) PROJECT_DIR="$global_dir" ;;
-        1) PROJECT_DIR="$PWD" ;;
-    esac
-    mkdir -p "$PROJECT_DIR"
+    echo -e "OpenCode config location:"
+    echo -e "  ${BOLD}${global_dir}${NC} (global, works everywhere)"
+    echo ""
+    info "Using global config: ${global_dir}"
+    PROJECT_DIR="$global_dir"
+    mkdir -p "$PROJECT_DIR" || die "Cannot create config directory: $PROJECT_DIR"
 
     # ── Phase 6: Check ports ──────────────────────────────────────────────
     header "Pre-flight Checks"
