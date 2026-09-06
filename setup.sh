@@ -950,14 +950,30 @@ opencode_configure() {
   "provider": {
     "${provider_key}": {
       "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
       "options": {
         "baseURL": "${api_base}"
+      },
+      "models": {
+        "${MODEL_OLLAMA}": {
+          "name": "${MODEL_NAME}"
+        }
       }
     }
   },
-  "model": "ollama:${MODEL_OLLAMA}"
+  "model": "${provider_key}/${MODEL_OLLAMA}"
 }
 CFGEOF
+
+    # Install the npm package for OpenCode custom provider
+    if command -v npm &>/dev/null; then
+        local config_dir
+        config_dir=$(dirname "$config_file")
+        if [[ ! -d "$config_dir/node_modules/@ai-sdk/openai-compatible" ]]; then
+            info "Installing @ai-sdk/openai-compatible for OpenCode..."
+            (cd "$config_dir" && npm install @ai-sdk/openai-compatible 2>/dev/null) || warn "Failed to install npm package"
+        fi
+    fi
     ok "Config written: ${config_file}"
 
     # Write auth (placeholder for local providers) — store in /mnt/podman_storage
