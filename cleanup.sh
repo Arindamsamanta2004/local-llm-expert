@@ -57,7 +57,7 @@ WHAT IT REMOVES:
   ✓ Conda 'ollama' environment
   ✓ ~/.local/bin/ollama binary
   ✓ ~/.cache/local-llm-expert/ cache
-  ✓ OpenCode config (~/.config/opencode/)
+  ✓ OpenCode config and auth (/mnt/podman_storage/.config/opencode, .local/share/opencode)
   ✓ Setup logs (setup_*.log)
   ✓ Kill running ollama/vllm processes
 
@@ -126,14 +126,17 @@ main() {
         rm -rf "$HOME/.cache/local-llm-expert" && ok "Cache removed" || warn "Failed to remove cache"
     fi
 
-    # 4. Remove OpenCode config and auth
-    if [[ -d "$HOME/.config/opencode" ]]; then
-        info "Removing ~/.config/opencode/..."
-        rm -rf "$HOME/.config/opencode" && ok "OpenCode config removed" || warn "Failed to remove config"
+    # 4. Remove OpenCode config and auth (from /mnt/podman_storage)
+    local config_dir="${SCRIPT_DIR%/*}/.config/opencode"
+    local auth_dir="${SCRIPT_DIR%/*}/.local/share/opencode"
+
+    if [[ -d "$config_dir" ]]; then
+        info "Removing OpenCode config ($config_dir)..."
+        rm -rf "$config_dir" && ok "OpenCode config removed" || warn "Failed to remove config"
     fi
-    if [[ -f "$HOME/.local/share/opencode/auth.json" ]]; then
-        info "Removing OpenCode auth..."
-        rm -f "$HOME/.local/share/opencode/auth.json" && ok "Auth removed" || warn "Failed to remove auth"
+    if [[ -d "$auth_dir" ]]; then
+        info "Removing OpenCode auth ($auth_dir)..."
+        rm -rf "$auth_dir" && ok "OpenCode auth removed" || warn "Failed to remove auth"
     fi
 
     # 5. Remove logs and temp files

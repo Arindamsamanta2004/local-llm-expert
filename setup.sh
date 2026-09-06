@@ -960,9 +960,9 @@ opencode_configure() {
 CFGEOF
     ok "Config written: ${config_file}"
 
-    # Write auth (placeholder for local providers)
-    local auth_dir="${HOME}/.local/share/opencode"
-    mkdir -p "$auth_dir"
+    # Write auth (placeholder for local providers) — store in /mnt/podman_storage
+    local auth_dir="${SCRIPT_DIR%/*}/.local/share/opencode"
+    mkdir -p "$auth_dir" || die "Cannot create auth directory: $auth_dir"
     cat > "${auth_dir}/auth.json" << AEOF
 {
   "${provider_key}": {
