@@ -117,11 +117,11 @@ detect_system() {
         TOTAL_RAM_MB=$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576 ))
     fi
 
-    # ── Disk (free space in project dir) ──────────────────────────────────
+    # ── Disk (free space for models) ─────────────────────────────────────
     FREE_DISK_MB=0
     if command -v df &>/dev/null; then
-        # Use home dir for disk check (where models are stored)
-        FREE_DISK_MB=$(df -m "$HOME" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
+        # Check script directory (where models will be stored: /mnt/podman_storage/...)
+        FREE_DISK_MB=$(df -m "$SCRIPT_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
     fi
 
     # ── GPU detection ─────────────────────────────────────────────────────
@@ -348,7 +348,10 @@ ollama_install() {
 
                     # Start Ollama within the conda environment
                     info "Starting Ollama from conda environment..."
-                    local conda_activation_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && ollama serve"
+                    # Store models in /mnt/podman_storage where we have space
+                    export OLLAMA_MODELS="${SCRIPT_DIR%/*}/.ollama/models"
+                    mkdir -p "$OLLAMA_MODELS"
+                    local conda_activation_cmd="eval \"\$(${PKG_MGR_CMD} shell.bash hook 2>/dev/null)\" && ${PKG_MGR_CMD} activate ollama 2>/dev/null && OLLAMA_MODELS=\"${OLLAMA_MODELS}\" ollama serve"
                     nohup bash -c "$conda_activation_cmd" > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
                     OLLAMA_PID=$!
                     sleep 3
@@ -679,9 +682,11 @@ ollama_pull_and_warmup() {
                 fi
                 ok "Ollama upgraded to latest: $($ollama_bin --version 2>/dev/null)"
 
-                # Restart Ollama with new binary
+                # Restart Ollama with new binary (store models in /mnt/podman_storage)
                 info "Restarting Ollama with new version..."
-                nohup $ollama_bin serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+                export OLLAMA_MODELS="${SCRIPT_DIR%/*}/.ollama/models"
+                mkdir -p "$OLLAMA_MODELS"
+                nohup env OLLAMA_MODELS="$OLLAMA_MODELS" $ollama_bin serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
                 sleep 3
 
                 # Retry pull with new version
