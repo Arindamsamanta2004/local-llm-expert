@@ -62,7 +62,7 @@ WHAT IT REMOVES:
   ✓ Kill running ollama/vllm processes
 
 WITH --all:
-  ✓ Also remove downloaded models (~/.ollama/models/)
+  ✓ Also remove downloaded models (~/.ollama/models/ and /mnt/podman_storage/.ollama/models/)
   ✓ vLLM environment
 
 AFTER CLEANUP:
@@ -146,16 +146,30 @@ main() {
     rm -rf /tmp/ollama-extract 2>/dev/null || true
     ok "Logs and temp files removed"
 
-    # 7. Remove models (if --all)
+    # 6. Remove models (if --all)
     if [[ "$remove_all" == "true" ]]; then
+        local models_removed=false
+
+        # Remove from home directory
         if [[ -d "$HOME/.ollama/models" ]]; then
             info "Removing downloaded models (~/.ollama/models/)..."
             if prompt_yn "This will remove all downloaded models. Continue?"; then
-                rm -rf "$HOME/.ollama/models" && ok "Models removed" || warn "Failed to remove models"
+                rm -rf "$HOME/.ollama/models" && ok "Home models removed" || warn "Failed to remove home models"
+                models_removed=true
             fi
         fi
 
-        # 8. Remove vLLM environment
+        # Remove from /mnt/podman_storage
+        local script_dir="$SCRIPT_DIR"
+        local mnt_models_dir="${script_dir%/*}/.ollama/models"
+        if [[ -d "$mnt_models_dir" ]]; then
+            info "Removing downloaded models ($mnt_models_dir)..."
+            if [[ "$models_removed" == "true" ]] || prompt_yn "Also remove models from $mnt_models_dir?"; then
+                rm -rf "$mnt_models_dir" && ok "Podman storage models removed" || warn "Failed to remove podman models"
+            fi
+        fi
+
+        # 7. Remove vLLM environment
         if [[ -d "$HOME/vllm-env" ]]; then
             info "Removing vLLM environment..."
             rm -rf "$HOME/vllm-env" && ok "vLLM environment removed" || warn "Failed to remove vLLM"

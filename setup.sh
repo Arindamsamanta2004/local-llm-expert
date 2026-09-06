@@ -471,9 +471,11 @@ ollama_ensure_running() {
         fi
     fi
 
-    # Fallback: start manually in background
+    # Fallback: start manually in background (store models in /mnt/podman_storage)
     warn "Starting Ollama manually in background..."
-    nohup ollama serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+    export OLLAMA_MODELS="${SCRIPT_DIR%/*}/.ollama/models"
+    mkdir -p "$OLLAMA_MODELS"
+    nohup env OLLAMA_MODELS="$OLLAMA_MODELS" ollama serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
     local pid=$!
     for i in $(seq 1 15); do
         if curl -s --max-time 2 http://localhost:11434/api/tags &>/dev/null; then
