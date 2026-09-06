@@ -1430,6 +1430,8 @@ cmd_setup() {
         echo -e "${GREEN}Launching OpenCode now...${NC}"
         echo -e "${YELLOW}(Press Ctrl+C to exit OpenCode)${NC}"
         echo ""
+        # Set config dir to /mnt/podman_storage to avoid writing to full home directory
+        export OPENCODE_CONFIG_DIR="${SCRIPT_DIR%/*}/.config/opencode"
         exec "$opencode_bin"
     else
         echo -e "${BOLD}To start OpenCode:${NC}"
