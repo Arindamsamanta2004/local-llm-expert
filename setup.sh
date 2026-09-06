@@ -1406,6 +1406,14 @@ cmd_setup() {
     echo "Log: ${LOG_FILE}"
     echo ""
 
+    # Create symlink so OpenCode writes to /mnt/podman_storage instead of home
+    local oc_config_link="${HOME}/.config/opencode"
+    local oc_config_real="${SCRIPT_DIR%/*}/.config/opencode"
+    if [[ ! -L "$oc_config_link" && ! -d "$oc_config_link" ]]; then
+        mkdir -p "$(dirname "$oc_config_link")" 2>/dev/null || true
+        ln -sf "$oc_config_real" "$oc_config_link" 2>/dev/null || warn "Could not create symlink for OpenCode config"
+    fi
+
     # Find opencode binary
     local opencode_bin
     for candidate in \
@@ -1425,7 +1433,7 @@ cmd_setup() {
         exec "$opencode_bin"
     else
         echo -e "${BOLD}To start OpenCode:${NC}"
-        echo "  ~/.opencode/bin/opencode"
+        echo "  opencode"
     fi
 }
 
