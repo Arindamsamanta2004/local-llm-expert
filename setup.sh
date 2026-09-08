@@ -976,8 +976,9 @@ CFGEOF
     fi
     ok "Config written: ${config_file}"
 
-    # Write auth (placeholder for local providers) — store in /mnt/podman_storage
-    local auth_dir="${SCRIPT_DIR%/*}/.local/share/opencode"
+    # Write auth (placeholder for local providers) — store in real $HOME so
+    # OpenCode can find it: OPENCODE reads auth from $HOME/.local/share/opencode/auth.json
+    local auth_dir="${HOME}/.local/share/opencode"
     mkdir -p "$auth_dir" || die "Cannot create auth directory: $auth_dir"
     cat > "${auth_dir}/auth.json" << AEOF
 {
@@ -1317,8 +1318,11 @@ cmd_setup() {
     # ── Phase 5: Config location ─────────────────────────────────────────
     header "Config Location"
 
-    # Always use /mnt/podman_storage (home partition has no space)
-    local global_dir="${SCRIPT_DIR%/*}/.config/opencode"
+    # OpenCode reads its GLOBAL config from $HOME/.config/opencode regardless
+    # of the working directory. Large files (Ollama models) go to the big
+    # partition via OLLAMA_MODELS, but these tiny configs must live where
+    # OpenCode actually looks: $HOME/.config/opencode and $HOME/.local/share/opencode.
+    local global_dir="${HOME}/.config/opencode"
 
     echo -e "OpenCode config location:"
     echo -e "  ${BOLD}${global_dir}${NC} (global, works everywhere)"
@@ -1422,14 +1426,6 @@ cmd_setup() {
     echo "Log: ${LOG_FILE}"
     echo ""
 
-    # Create symlink so OpenCode writes to /mnt/podman_storage instead of home
-    local oc_config_link="${HOME}/.config/opencode"
-    local oc_config_real="${SCRIPT_DIR%/*}/.config/opencode"
-    if [[ ! -L "$oc_config_link" && ! -d "$oc_config_link" ]]; then
-        mkdir -p "$(dirname "$oc_config_link")" 2>/dev/null || true
-        ln -sf "$oc_config_real" "$oc_config_link" 2>/dev/null || warn "Could not create symlink for OpenCode config"
-    fi
-
     # Find opencode binary
     local opencode_bin
     for candidate in \
@@ -1446,8 +1442,8 @@ cmd_setup() {
         echo -e "${GREEN}Launching OpenCode now...${NC}"
         echo -e "${YELLOW}(Press Ctrl+C to exit OpenCode)${NC}"
         echo ""
-        # Set config dir to /mnt/podman_storage to avoid writing to full home directory
-        export OPENCODE_CONFIG_DIR="${SCRIPT_DIR%/*}/.config/opencode"
+        # Config + auth are written to $HOME/.config/opencode and
+        # $HOME/.local/share/opencode, which OpenCode reads by default.
         exec "$opencode_bin"
     else
         echo -e "${BOLD}To start OpenCode:${NC}"
