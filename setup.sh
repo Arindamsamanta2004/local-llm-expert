@@ -16,6 +16,8 @@ VERSION="1.0.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/setup_$(date +%Y%m%d_%H%M%S).log"
 USED_CONDA_INSTALL=false
+OLLAMA_BIN=""      # path to official (CUDA-capable) ollama binary
+IS_MIG=false       # NVIDIA MIG (shared GPU) mode
 
 # ── Colors (disabled if not a terminal) ──────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -136,12 +138,29 @@ detect_system() {
             --format=csv,noheader,nounits 2>/dev/null || true)
         if [[ -n "$gpu_csv" ]]; then
             HAS_NVIDIA=true; HAS_GPU=true
+
+            # MIG mode (shared GPU): CUDA needs the MIG *instance* UUID, not the
+            # physical GPU UUID, for CUDA_VISIBLE_DEVICES.
+            local -a mig_uuids=()
+            if nvidia-smi -L 2>/dev/null | grep -q "MIG"; then
+                IS_MIG=true
+                mapfile -t mig_uuids < <(nvidia-smi -L 2>/dev/null | grep -oP "UUID: \KMIG-[0-9a-f-]+")
+                if (( ${#mig_uuids[@]} > 0 )); then
+                    warn "MIG mode detected — pinning to MIG GPU instance UUID(s)"
+                fi
+            fi
+
             while IFS=',' read -r idx name vram uuid used; do
                 idx=$(echo "$idx" | xargs)
                 name=$(echo "$name" | xargs)
                 vram=$(echo "$vram" | xargs)
                 uuid=$(echo "$uuid" | xargs)
                 used=$(echo "$used" | xargs)
+
+                # In MIG mode the physical GPU UUID won't bind Ollama to our slice.
+                if $IS_MIG && (( ${#mig_uuids[@]} > 0 )); then
+                    uuid="${mig_uuids[$GPU_COUNT]:-${mig_uuids[0]}}"
+                fi
 
                 # Handle MIG (Multi-Instance GPU) restrictions: [Insufficient Permissions]
                 # In MIG mode, we can't query memory.total but we can parse MIG device info
@@ -285,10 +304,93 @@ parse_model() {
 # ═════════════════════════════════════════════════════════════════════════════
 # PROVIDER: Ollama
 # ═════════════════════════════════════════════════════════════════════════════
+# GPU offload requires the official Ollama binary. Conda-packaged Ollama
+# (conda-forge) is CPU-only — it ships no CUDA/ROCm libraries, so the model
+# never loads into GPU VRAM no matter what env vars you set.
+prepare_official_ollama() {
+    local libdir="${HOME}/.local/lib/ollama"
+
+    has_cuda_libs() {
+        local d="$1"
+        [[ -d "$d" ]] && { [[ -d "$d/cuda_v12" ]] || [[ -d "$d/cuda_v13" ]] || ls "$d"/libggml-cuda.so* &>/dev/null; }
+    }
+
+    # 1. Already installed at ~/.local with CUDA libs?
+    if [[ -x "${HOME}/.local/bin/ollama" ]] && has_cuda_libs "$libdir"; then
+        OLLAMA_BIN="${HOME}/.local/bin/ollama"
+        ok "Official Ollama already installed: ${OLLAMA_BIN}"
+        return 0
+    fi
+
+    # 2. An ollama on PATH (e.g. conda env) that has CUDA libs?
+    local existing
+    existing="$(command -v ollama 2>/dev/null || true)"
+    if [[ -n "$existing" ]]; then
+        local ex_lib="$(dirname "$existing")/../lib/ollama"
+        if has_cuda_libs "$ex_lib"; then
+            OLLAMA_BIN="$existing"
+            ok "CUDA-capable Ollama found on PATH: ${OLLAMA_BIN}"
+            return 0
+        fi
+    fi
+
+    # 3. Download the latest official release (includes CUDA libs).
+    info "Downloading official Ollama binary (CUDA support) to ~/.local..."
+    mkdir -p "${HOME}/.local/bin" "${HOME}/.local/lib"
+
+    local latest_tag
+    latest_tag=$(curl -s --max-time 30 "https://api.github.com/repos/ollama/ollama/releases/latest" 2>/dev/null \
+        | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4 | head -1)
+    [[ -z "$latest_tag" ]] && latest_tag="v0.33.3"
+
+    local url tarball
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        url="https://github.com/ollama/ollama/releases/download/${latest_tag}/ollama-linux-arm64.tar.zst"
+    else
+        url="https://github.com/ollama/ollama/releases/download/${latest_tag}/ollama-linux-amd64.tar.zst"
+    fi
+    tarball="/tmp/ollama-latest.tar.zst"
+
+    info "Trying: $url"
+    rm -f "$tarball"
+    rm -rf /tmp/ollama-extract
+    if curl -sL --max-time 120 -o "$tarball" "$url"; then
+        if command -v zstd &>/dev/null && zstd -t "$tarball" &>/dev/null; then
+            mkdir -p /tmp/ollama-extract
+            tar --zstd -xf "$tarball" -C /tmp/ollama-extract
+            if [[ -x /tmp/ollama-extract/bin/ollama ]]; then
+                cp -f /tmp/ollama-extract/bin/ollama "${HOME}/.local/bin/ollama"
+                cp -rf /tmp/ollama-extract/lib/ollama "${HOME}/.local/lib/"
+                chmod +x "${HOME}/.local/bin/ollama"
+                rm -rf /tmp/ollama-extract
+                rm -f "$tarball"
+                OLLAMA_BIN="${HOME}/.local/bin/ollama"
+                ok "Ollama installed: ${OLLAMA_BIN}"
+                return 0
+            fi
+        fi
+    fi
+
+    die "Failed to download the official Ollama binary (GPU build). Install it manually: curl -fsSL https://ollama.com/install.sh | sh"
+}
+
 ollama_install() {
     if command -v ollama &>/dev/null; then
-        ok "Ollama already installed: $(ollama --version 2>/dev/null)"
-        return 0
+        # If a GPU is present, a PATH ollama without CUDA libs is useless for
+        # offload — replace it rather than trust it.
+        if { $HAS_NVIDIA || $HAS_AMD; } && [[ -z "$OLLAMA_BIN" ]]; then
+            local existing="$(command -v ollama)"
+            local ex_lib="$(dirname "$existing")/../lib/ollama"
+            if [[ -d "$ex_lib" ]] && { [[ -d "$ex_lib/cuda_v12" ]] || [[ -d "$ex_lib/cuda_v13" ]] || ls "$ex_lib"/libggml-cuda.so* &>/dev/null; }; then
+                OLLAMA_BIN="$existing"
+                ok "Ollama already installed (CUDA build): $existing"
+                return 0
+            fi
+            warn "Ollama found on PATH but it is CPU-only — replacing with a CUDA build for GPU offload."
+        else
+            ok "Ollama already installed: $(ollama --version 2>/dev/null)"
+            return 0
+        fi
     fi
 
     info "Installing Ollama..."
@@ -306,6 +408,14 @@ ollama_install() {
             curl -fsSL https://ollama.com/install.sh | sh
             ok "Ollama installed system-wide: $(ollama --version 2>/dev/null)"
         else
+            # GPU present — conda ollama is CPU-only, so use the official binary
+            if $HAS_NVIDIA || $HAS_AMD; then
+                header "GPU detected — installing official Ollama (conda build is CPU-only)"
+                prepare_official_ollama
+                ok "Ollama ready (GPU build): ${OLLAMA_BIN}"
+                return 0
+            fi
+
             # No sudo — check for conda first
             local has_conda=false
             command -v conda &>/dev/null && has_conda=true
@@ -471,11 +581,13 @@ ollama_ensure_running() {
         fi
     fi
 
-    # Fallback: start manually in background (store models in /mnt/podman_storage)
+    # Fallback: start manually in background (store models in big partition)
     warn "Starting Ollama manually in background..."
     export OLLAMA_MODELS="${SCRIPT_DIR%/*}/.ollama/models"
     mkdir -p "$OLLAMA_MODELS"
-    nohup env OLLAMA_MODELS="$OLLAMA_MODELS" ollama serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
+    local ollama_cmd="ollama"
+    [[ -n "$OLLAMA_BIN" ]] && ollama_cmd="$OLLAMA_BIN"
+    nohup env OLLAMA_MODELS="$OLLAMA_MODELS" "$ollama_cmd" serve > "${SCRIPT_DIR}/ollama_serve.log" 2>&1 &
     local pid=$!
     for i in $(seq 1 15); do
         if curl -s --max-time 2 http://localhost:11434/api/tags &>/dev/null; then
@@ -495,12 +607,19 @@ ollama_pin_gpu() {
     local ollama_lib=""
     if $HAS_NVIDIA; then
         local cuda_major="${CUDA_VERSION%%.*}"
-        for candidate in "/usr/local/lib/ollama/cuda_v${cuda_major}" "/usr/local/lib/ollama/cuda_v12"; do
+        for candidate in \
+            "${HOME}/.local/lib/ollama/cuda_v${cuda_major}" \
+            "${HOME}/.local/lib/ollama/cuda_v12" \
+            "/usr/local/lib/ollama/cuda_v${cuda_major}" \
+            "/usr/local/lib/ollama/cuda_v12"; do
             if [[ -d "$candidate" ]]; then
                 ollama_lib="$(basename "$candidate")"
                 break
             fi
         done
+        if [[ -n "$ollama_lib" && "$IS_MIG" == "true" ]]; then
+            warn "MIG mode: pinning to MIG instance ${gpu_uuid} with OLLAMA_LLM_LIBRARY=${ollama_lib}"
+        fi
     fi
 
     if $HAS_SYSTEMD && [[ -f /etc/systemd/system/ollama.service ]]; then
@@ -556,6 +675,7 @@ ollama_pin_gpu() {
 
         # Write a launcher script as fallback
         local launcher="${SCRIPT_DIR}/start_ollama.sh"
+        local ollama_cmd="${OLLAMA_BIN:-ollama}"
         {
             echo "#!/usr/bin/env bash"
             echo "# Auto-generated Ollama launcher — pinned to GPU ${gpu_idx}"
@@ -566,7 +686,13 @@ ollama_pin_gpu() {
                 echo "export ROCR_VISIBLE_DEVICES=${gpu_idx}"
                 echo "export HIP_VISIBLE_DEVICES=${gpu_idx}"
             fi
-            echo "exec ollama serve"
+            echo "export OLLAMA_MODELS=\"${SCRIPT_DIR%/*}/.ollama/models\""
+            echo "export OLLAMA_KEEP_ALIVE=\"2h\""
+            if [[ "$ollama_cmd" == */* ]]; then
+                echo "exec \"${ollama_cmd}\" serve"
+            else
+                echo "exec ollama serve"
+            fi
         } > "$launcher"
         chmod +x "$launcher"
         ok "Launcher script: ${launcher}"
@@ -589,7 +715,7 @@ ollama_pull_and_warmup() {
             pull_output=$(ollama pull "$model_tag" 2>&1) || pull_exit_code=$?
         fi
     else
-        pull_output=$(ollama pull "$model_tag" 2>&1) || pull_exit_code=$?
+        pull_output=$("${OLLAMA_BIN:-ollama}" pull "$model_tag" 2>&1) || pull_exit_code=$?
     fi
 
     # Check if Ollama version is too old
@@ -674,6 +800,13 @@ ollama_pull_and_warmup() {
             if [[ -n "$extracted_ollama" ]]; then
                 cp "$extracted_ollama" "$ollama_bin"
                 chmod +x "$ollama_bin"
+                # Official archives carry CUDA/ROCm libs under lib/ollama — copy
+                # them next to the binary so GPU offload works after upgrade.
+                if [[ -d /tmp/ollama-extract/lib/ollama ]]; then
+                    mkdir -p "${HOME}/.local/lib"
+                    cp -rf /tmp/ollama-extract/lib/ollama "${HOME}/.local/lib/"
+                    OLLAMA_BIN="$ollama_bin"
+                fi
             fi
             rm -f "$tarball"
             rm -rf /tmp/ollama-extract
@@ -725,6 +858,8 @@ ollama_pull_and_warmup() {
     local list_cmd="ollama list"
     if [[ "$USED_CONDA_INSTALL" == "true" ]]; then
         list_cmd="${PKG_MGR_CMD} run -n ollama ollama list"
+    elif [[ -n "$OLLAMA_BIN" ]]; then
+        list_cmd="${OLLAMA_BIN} list"
     fi
 
     local max_retries=10
@@ -1040,6 +1175,29 @@ print(f'  Model response: {msg.strip()[:80]}')
     else
         warn "Unexpected API response. The model may still be loading."
         echo "  Response: ${resp:0:200}"
+    fi
+
+    # Confirm the model actually got offloaded to GPU VRAM (conda ollama is
+    # CPU-only and silently runs everything on RAM — this catches that).
+    if [[ "$provider_key" == "ollama" ]]; then
+        local ps_info vram_gb size_gb pct placement
+        ps_info=$(curl -s --max-time 10 http://localhost:11434/api/ps 2>/dev/null \
+            | python3 -c "
+import sys, json
+d = json.load(sys.stdin).get('models', [{}])[0]
+vram = d.get('size_vram', 0); size = d.get('size', 0)
+pct = int(100 * vram // size) if size else 0
+state = 'GPU' if pct >= 50 else 'CPU'
+print(f'{state} {vram/1e9:.1f} {size/1e9:.1f}')
+" 2>/dev/null) || ps_info=""
+        if [[ -n "$ps_info" ]]; then
+            read -r placement vram_gb size_gb <<< "$ps_info"
+            if [[ "$placement" == "GPU" ]]; then
+                ok "Model offloaded to GPU: ${vram_gb}GB of ${size_gb}GB in VRAM."
+            else
+                warn "Model is running on CPU (only ${vram_gb}GB of ${size_gb}GB in VRAM). GPU offload not working."
+            fi
+        fi
     fi
 
     if $HAS_GPU && $HAS_NVIDIA; then
@@ -1485,6 +1643,11 @@ KNOWN WORKAROUNDS APPLIED:
     (bug: github.com/ollama/ollama/issues/9722). Script detects CUDA
     version and sets the correct library path automatically.
   - GPU UUIDs used instead of numeric indices for reliable pinning.
+  - MIG (shared GPU) discovered automatically — CUDA_VISIBLE_DEVICES is set
+    to the MIG instance UUID, not the physical GPU UUID, which Ollama can't bind.
+  - Conda-packaged Ollama is CPU-only (no CUDA libs). On NVIDIA/AMD machines
+    the script downloads the official binary to ~/.local/bin instead, and
+    verifies the model is actually offloaded to VRAM after setup.
   - OpenCode auth placeholder for local providers (no real key needed).
 
 HELPEOF
